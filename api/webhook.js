@@ -1,42 +1,56 @@
 'use strict';
 
-const crypto  = require('crypto');
 const { Packer } = require('docx');
 const { Resend } = require('resend');
 const { buildDeliveryPlan }  = require('../lib/generate-plan.js');
 const { buildKickoffSummary } = require('../lib/generate-summary.js');
 
 // ── Config from environment variables ────────────────────────────────────────
-const RESEND_API_KEY    = process.env.RESEND_API_KEY;
-const FORMSPREE_SECRET  = process.env.FORMSPREE_SECRET || '';
-const EMAIL_FROM        = process.env.EMAIL_FROM        || 'onboarding@resend.dev';
-const EMAIL_PRIMARY     = process.env.EMAIL_PRIMARY     || 'info@sabelcustomersuccess.com';
-const EMAIL_CC          = process.env.EMAIL_CC          || 'project-admin@sabelcustomersuccess.com';
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const EMAIL_FROM     = process.env.EMAIL_FROM     || 'onboarding@resend.dev';
+const EMAIL_PRIMARY  = process.env.EMAIL_PRIMARY  || 'info@sabelcustomersuccess.com';
+const EMAIL_CC       = process.env.EMAIL_CC       || 'project-admin@sabelcustomersuccess.com';
 
-// ── Verify Formspree webhook signature (optional but recommended) ─────────────
-function verifySignature(rawBody, signature) {
-  if (!FORMSPREE_SECRET || !signature) return true; // skip if not configured
-  try {
-    var expected = crypto
-      .createHmac('sha256', FORMSPREE_SECRET)
-      .update(rawBody)
-      .digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
-  } catch (e) {
-    return false;
-  }
+// ── Read raw body from stream ─────────────────────────────────────────────────
+function getRawBody(req) {
+  return new Promise(function(resolve, reject) {
+    var chunks = [];
+    req.on('data', function(chunk) { chunks.push(chunk); });
+    req.on('end',  function() { resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('error', reject);
+  });
 }
 
-// ── Parse Formspree payload ───────────────────────────────────────────────────
-// Formspree webhooks send form fields as top-level keys in the JSON body.
-// The hidden fields (_subject, email, _cc, _replyto) are included too — ignore them.
-function parseFormspreePayload(body) {
-  // Formspree may nest under 'data' in some webhook versions — handle both
-  var fields = (body.data && typeof body.data === 'object') ? body.data : body;
+// ── Parse urlencoded string into object ──────────────────────────────────────
+function parseUrlEncoded(str) {
+  var result = {};
+  if (!str) return result;
+  str.split('&').forEach(function(pair) {
+    var idx = pair.indexOf('=');
+    if (idx === -1) return;
+    var key = decodeURIComponent(pair.slice(0, idx).replace(/\+/g, ' '));
+    var val = decodeURIComponent(pair.slice(idx + 1).replace(/\+/g, ' '));
+    result[key] = val;
+  });
+  return result;
+}
 
-  // Strip Formspree internal fields
-  var skip = new Set(['_subject', '_replyto', '_cc', '_next', '_gotcha', 'email',
-                      'submissionId', 'formId', 'createdAt', 'form_id']);
+// ── Parse incoming body — handles urlencoded and JSON ────────────────────────
+function parseFields(rawBody, contentType) {
+  var fields = {};
+  contentType = (contentType || '').toLowerCase();
+
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    fields = parseUrlEncoded(rawBody);
+  } else {
+    // Try JSON fallback
+    try { fields = JSON.parse(rawBody); } catch (e) { fields = {}; }
+    if (fields.data && typeof fields.data === 'object') fields = fields.data;
+  }
+
+  // Strip metadata fields
+  var skip = new Set(['_client', '_project', '_subject', '_replyto', '_cc',
+                      '_next', '_gotcha', 'submissionId', 'formId', 'createdAt']);
   var R = {};
   Object.keys(fields).forEach(function(key) {
     if (!skip.has(key)) R[key] = String(fields[key] || '').trim();
@@ -79,40 +93,27 @@ function formatEmailSummary(R) {
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 module.exports = async function handler(req, res) {
-  // Only accept POST
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  // CORS — allow the GitHub Pages form to POST here
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // Read raw body for signature verification
-  var rawBody = '';
-  if (typeof req.body === 'string') {
-    rawBody = req.body;
-  } else if (Buffer.isBuffer(req.body)) {
-    rawBody = req.body.toString('utf8');
-  } else {
-    rawBody = JSON.stringify(req.body);
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // Verify Formspree signature if secret is configured
-  var signature = req.headers['formspree-signature'] || req.headers['x-formspree-signature'] || '';
-  if (FORMSPREE_SECRET && !verifySignature(rawBody, signature)) {
-    console.error('Webhook signature verification failed');
-    return res.status(401).json({ error: 'Invalid signature' });
-  }
-
-  // Parse body
-  var body;
+  // Read raw body directly from stream (req.body is undefined in Vercel serverless)
+  var rawBody;
   try {
-    body = typeof req.body === 'object' ? req.body : JSON.parse(rawBody);
+    rawBody = await getRawBody(req);
   } catch (e) {
-    console.error('Failed to parse webhook body:', e.message);
-    return res.status(400).json({ error: 'Invalid JSON' });
+    console.error('Failed to read body:', e.message);
+    return res.status(400).json({ error: 'Failed to read request body' });
   }
 
-  // Extract form values
-  var R = parseFormspreePayload(body);
+  // Parse all form fields
+  var R = parseFields(rawBody, req.headers['content-type']);
   console.log('Received submission with', Object.keys(R).length, 'fields');
+  console.log('Sample — c_oo_name:', R.c_oo_name, '| p04_slack_channel:', R.p04_slack_channel);
 
   // Generate both documents
   var planDoc, summaryDoc;
@@ -139,7 +140,7 @@ module.exports = async function handler(req, res) {
   // Send email via Resend
   if (!RESEND_API_KEY) {
     console.error('RESEND_API_KEY is not set');
-    return res.status(500).json({ error: 'Email service not configured — set RESEND_API_KEY in environment variables' });
+    return res.status(500).json({ error: 'Email service not configured' });
   }
 
   var resend = new Resend(RESEND_API_KEY);
@@ -163,7 +164,7 @@ module.exports = async function handler(req, res) {
       ],
     });
 
-    console.log('Email sent successfully, id:', emailResult.data && emailResult.data.id);
+    console.log('Email sent, id:', emailResult.data && emailResult.data.id);
     return res.status(200).json({ ok: true, message: 'Documents generated and emailed successfully' });
 
   } catch (e) {
