@@ -1,0 +1,13 @@
+{
+  "name": "sabel-intake-webhook",
+  "version": "1.0.0",
+  "description": "Formspree webhook → DOCX generation → email delivery for Sabel intake forms",
+  "private": true,
+  "dependencies": {
+    "docx": "^9.5.3",
+    "resend": "^3.2.0"
+  },
+  "engines": {
+    "node": "20.x"
+  }
+}
