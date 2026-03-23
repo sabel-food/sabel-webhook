@@ -1,174 +1,136 @@
 'use strict';
 
-const { Packer } = require('docx');
-const { Resend } = require('resend');
-const { buildDeliveryPlan }  = require('../lib/generate-plan.js');
-const { buildKickoffSummary } = require('../lib/generate-summary.js');
+const { Packer }                     = require('docx');
+const { Resend }                     = require('resend');
+const { generateDocumentContent }    = require('../lib/claude-generator.js');
+const { buildDeliveryPlanDynamic }   = require('../lib/generate-plan-dynamic.js');
+const { buildKickoffSummaryDynamic } = require('../lib/generate-summary-dynamic.js');
+const { buildSOWPdf }                = require('../lib/generate-sow-pdf.js');
 
-// ── Config from environment variables ────────────────────────────────────────
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const EMAIL_FROM     = process.env.EMAIL_FROM     || 'onboarding@resend.dev';
-const EMAIL_PRIMARY  = process.env.EMAIL_PRIMARY  || 'info@sabelcustomersuccess.com';
-const EMAIL_CC       = process.env.EMAIL_CC       || 'project-admin@sabelcustomersuccess.com';
+const EMAIL_FROM     = process.env.EMAIL_FROM    || 'onboarding@resend.dev';
+const EMAIL_PRIMARY  = process.env.EMAIL_PRIMARY || 'info@sabelcustomersuccess.com';
+const EMAIL_CC       = process.env.EMAIL_CC      || 'project-admin@sabelcustomersuccess.com';
 
-// ── Read raw body from stream ─────────────────────────────────────────────────
 function getRawBody(req) {
   return new Promise(function(resolve, reject) {
     var chunks = [];
-    req.on('data', function(chunk) { chunks.push(chunk); });
-    req.on('end',  function() { resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('data',  function(c) { chunks.push(c); });
+    req.on('end',   function()  { resolve(Buffer.concat(chunks).toString('utf8')); });
     req.on('error', reject);
   });
 }
 
-// ── Parse urlencoded string into object ──────────────────────────────────────
 function parseUrlEncoded(str) {
-  var result = {};
-  if (!str) return result;
+  var out = {};
+  if (!str) return out;
   str.split('&').forEach(function(pair) {
-    var idx = pair.indexOf('=');
-    if (idx === -1) return;
-    var key = decodeURIComponent(pair.slice(0, idx).replace(/\+/g, ' '));
-    var val = decodeURIComponent(pair.slice(idx + 1).replace(/\+/g, ' '));
-    result[key] = val;
+    var i = pair.indexOf('=');
+    if (i === -1) return;
+    out[decodeURIComponent(pair.slice(0,i).replace(/\+/g,' '))] =
+       decodeURIComponent(pair.slice(i+1).replace(/\+/g,' '));
   });
-  return result;
+  return out;
 }
 
-// ── Parse incoming body — handles urlencoded and JSON ────────────────────────
-function parseFields(rawBody, contentType) {
+function parseFields(rawBody, ct) {
   var fields = {};
-  contentType = (contentType || '').toLowerCase();
-
-  if (contentType.includes('application/x-www-form-urlencoded')) {
+  ct = (ct || '').toLowerCase();
+  if (ct.includes('application/x-www-form-urlencoded')) {
     fields = parseUrlEncoded(rawBody);
   } else {
-    // Try JSON fallback
     try { fields = JSON.parse(rawBody); } catch (e) { fields = {}; }
     if (fields.data && typeof fields.data === 'object') fields = fields.data;
   }
-
-  // Strip metadata fields
-  var skip = new Set(['_client', '_project', '_subject', '_replyto', '_cc',
-                      '_next', '_gotcha', 'submissionId', 'formId', 'createdAt']);
+  var skip = new Set(['_subject','_replyto','_cc','_next','_gotcha','submissionId','formId','createdAt']);
   var R = {};
-  Object.keys(fields).forEach(function(key) {
-    if (!skip.has(key)) R[key] = String(fields[key] || '').trim();
-  });
+  Object.keys(fields).forEach(function(k) { if (!skip.has(k)) R[k] = String(fields[k]||'').trim(); });
   return R;
 }
 
-// ── Format a brief plain-text summary for the email body ─────────────────────
-function formatEmailSummary(R) {
-  function f(label, key) {
-    var val = R[key] && R[key] !== '(not provided)' ? R[key] : '—';
-    return label + ': ' + val + '\n';
-  }
-  var lines = [
-    'WorkInitiatives — Kickoff Intake Form submitted\n',
-    '── Contacts ──────────────────────────────────────────',
-    f('Decision-maker', 'c_dm_name') + f('Email', 'c_dm_email'),
-    f('Day-to-day owner', 'c_oo_name') + f('Email', 'c_oo_email'),
-    f('Fin approver', 'c_fa_name') + f('Email', 'c_fa_email'),
-    '',
-    '── Access ────────────────────────────────────────────',
-    f('Intercom contact', 'acc_intercom_contact') + f('Status', 'acc_intercom_status'),
-    f('Slack contact',    'acc_slack_contact')    + f('Status', 'acc_slack_status'),
-    f('GHL contact',      'acc_ghl_contact')      + f('Status', 'acc_ghl_status'),
-    '',
-    '── Key Fin details ───────────────────────────────────',
-    f('GHL booking URL',   'p01_ghl_url'),
-    f('Slack channel',     'p04_slack_channel'),
-    f('Refund threshold',  'fin_refund_threshold'),
-    f('Credit value',      'fin_credit_value'),
-    '',
-    '── Out of scope confirmed ────────────────────────────',
-    f('Confirmed', 'oos_confirmed'),
-    '',
-    'Both documents are attached to this email.',
-    'Internal Delivery Plan and Kickoff Summary are ready for the team.',
-  ];
-  return lines.join('\n');
-}
-
-// ── Main handler ──────────────────────────────────────────────────────────────
 module.exports = async function handler(req, res) {
-  // CORS — allow the GitHub Pages form to POST here
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin',  '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'POST')    return res.status(405).json({ error: 'Method not allowed' });
 
-  // Read raw body directly from stream (req.body is undefined in Vercel serverless)
   var rawBody;
+  try { rawBody = await getRawBody(req); }
+  catch (e) { return res.status(400).json({ error: 'Failed to read body' }); }
+
+  var R           = parseFields(rawBody, req.headers['content-type']);
+  var clientName  = R._client  || 'Client';
+  var projectName = R._project || 'Intercom Implementation';
+  console.log('Submission from:', clientName, '| Fields:', Object.keys(R).length);
+
+  // 1 — Call Claude to generate structured document content
+  var G;
   try {
-    rawBody = await getRawBody(req);
+    console.log('Calling Claude API...');
+    G = await generateDocumentContent(R);
+    console.log('Claude done. Procedures:', (G.procedures||[]).length, '| Weeks:', (G.delivery_weeks||[]).length, '| Gaps:', (G.gaps||[]).length);
   } catch (e) {
-    console.error('Failed to read body:', e.message);
-    return res.status(400).json({ error: 'Failed to read request body' });
+    console.error('Claude failed:', e.message);
+    return res.status(500).json({ error: 'Content generation failed: ' + e.message });
   }
 
-  // Parse all form fields
-  var R = parseFields(rawBody, req.headers['content-type']);
-  console.log('Received submission with', Object.keys(R).length, 'fields');
-  console.log('Sample — c_oo_name:', R.c_oo_name, '| p04_slack_channel:', R.p04_slack_channel);
-
-  // Generate both documents
-  var planDoc, summaryDoc;
+  // 2 — Build all three documents in parallel
+  var planBuf, summaryBuf, sowBuf;
   try {
-    planDoc    = buildDeliveryPlan(R);
-    summaryDoc = buildKickoffSummary(R);
-  } catch (e) {
-    console.error('Document generation failed:', e.message, e.stack);
-    return res.status(500).json({ error: 'Document generation failed: ' + e.message });
-  }
-
-  // Convert to buffers
-  var planBuf, summaryBuf;
-  try {
-    [planBuf, summaryBuf] = await Promise.all([
+    console.log('Building documents...');
+    var planDoc    = buildDeliveryPlanDynamic(G);
+    var summaryDoc = buildKickoffSummaryDynamic(G);
+    [planBuf, summaryBuf, sowBuf] = await Promise.all([
       Packer.toBuffer(planDoc),
       Packer.toBuffer(summaryDoc),
+      buildSOWPdf(G),
     ]);
+    console.log('Documents built. Plan:', planBuf.length, 'Summary:', summaryBuf.length, 'SOW PDF:', sowBuf.length, 'bytes');
   } catch (e) {
-    console.error('DOCX buffer generation failed:', e.message);
-    return res.status(500).json({ error: 'Buffer generation failed: ' + e.message });
+    console.error('Build failed:', e.message, e.stack);
+    return res.status(500).json({ error: 'Document build failed: ' + e.message });
   }
 
-  // Send email via Resend
-  if (!RESEND_API_KEY) {
-    console.error('RESEND_API_KEY is not set');
-    return res.status(500).json({ error: 'Email service not configured' });
-  }
+  // 3 — Email all three via Resend
+  if (!RESEND_API_KEY) return res.status(500).json({ error: 'RESEND_API_KEY not set' });
 
+  var slug   = clientName.toLowerCase().replace(/[^a-z0-9]+/g, '');
   var resend = new Resend(RESEND_API_KEY);
 
+  var gapText = G.gaps && G.gaps.length
+    ? '\n\nGAPS TO RESOLVE BEFORE BUILD:\n' + G.gaps.map(function(g,i){ return (i+1)+'. '+g; }).join('\n')
+    : '';
+
   try {
-    var emailResult = await resend.emails.send({
+    var result = await resend.emails.send({
       from:    EMAIL_FROM,
       to:      EMAIL_PRIMARY,
       cc:      EMAIL_CC,
-      subject: 'WorkInitiatives — Kickoff Intake Form submitted',
-      text:    formatEmailSummary(R),
+      subject: clientName + ' \u2014 Kickoff Intake Form submitted',
+      text: [
+        clientName + ' \u2014 Kickoff Intake Form submitted',
+        'Project: ' + projectName,
+        'Fields received: ' + Object.keys(R).length,
+        'Procedures: ' + ((G.procedures||[]).map(function(p){return p.name;}).join(', ') || 'none'),
+        'Gaps identified: ' + (G.gaps||[]).length,
+        gapText,
+        '',
+        'Three documents attached:',
+        '1. Scope of Work (PDF) \u2014 dark branded, client-ready',
+        '2. Internal Delivery Plan (DOCX) \u2014 week-by-week schedule for Honey, Chris, Richard',
+        '3. Kickoff Summary (DOCX) \u2014 authoritative build reference',
+      ].join('\n'),
       attachments: [
-        {
-          filename: 'WorkInitiatives - Fin AI Automation Build - Internal Delivery Plan.docx',
-          content:  planBuf.toString('base64'),
-        },
-        {
-          filename: 'WorkInitiatives - Fin AI Automation Build - Kickoff Summary.docx',
-          content:  summaryBuf.toString('base64'),
-        },
+        { filename: slug + ' - Scope of Work.pdf',           content: sowBuf.toString('base64') },
+        { filename: slug + ' - Internal Delivery Plan.docx', content: planBuf.toString('base64') },
+        { filename: slug + ' - Kickoff Summary.docx',        content: summaryBuf.toString('base64') },
       ],
     });
-
-    console.log('Email sent, id:', emailResult.data && emailResult.data.id);
-    return res.status(200).json({ ok: true, message: 'Documents generated and emailed successfully' });
-
+    console.log('Email sent. ID:', result.data && result.data.id);
+    return res.status(200).json({ ok: true, client: clientName, gaps: (G.gaps||[]).length });
   } catch (e) {
-    console.error('Resend email failed:', e.message);
-    return res.status(500).json({ error: 'Email delivery failed: ' + e.message });
+    console.error('Email failed:', e.message);
+    return res.status(500).json({ error: 'Email failed: ' + e.message });
   }
 };
