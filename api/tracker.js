@@ -1,7 +1,7 @@
 import { Redis } from '@upstash/redis';
 
 const redis = Redis.fromEnv();
-const ALLOWED_KEYS = /^[a-z0-9-]+-tracker-v\d+$/; // basic safety check
+const KEY = 'aftership-tracker-v1';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -9,11 +9,6 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
-
-  const KEY = req.query?.key;
-  if (!KEY || !ALLOWED_KEYS.test(KEY)) {
-    return res.status(400).json({ ok: false, error: 'Missing or invalid key parameter' });
-  }
 
   if (req.method === 'GET') {
     try {
