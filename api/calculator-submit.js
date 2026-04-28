@@ -14,6 +14,8 @@ const RESEND_API = 'https://api.resend.com/emails';
 const ALLOWED_ORIGINS = [
   'https://sabelcustomersuccess.com',
   'https://www.sabelcustomersuccess.com',
+  'https://pricing.sabelcustomersuccess.com',
+  'https://sabel-webhook.vercel.app',
   'http://localhost:3000',
   'http://localhost:8080',
   'http://127.0.0.1:8080',

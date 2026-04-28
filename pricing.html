@@ -35,7 +35,7 @@
      Layout shell
      ============================================================ */
   .page {
-    max-width: 1480px;
+    max-width: 1180px;
     margin: 0 auto;
     padding: 40px 24px 80px;
     position: relative;
@@ -120,8 +120,8 @@
     background: var(--panel);
     border: 1px solid var(--border-soft);
     border-radius: 16px;
-    padding: 56px 40px 48px;
-    margin-bottom: 56px;
+    padding: 44px 32px 40px;
+    margin-bottom: 48px;
     position: relative;
     z-index: 1;
   }
@@ -212,18 +212,26 @@
   .selectable .label-block .desc { color: var(--muted); font-size: 14px; margin-top: 4px; }
 
   .platform-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 16px;
-  }
-  .platform-chip {
-    background: var(--input-bg);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 8px 16px;
+    margin-top: 12px;
+    color: var(--muted);
     font-size: 13px;
+    line-height: 1.6;
+  }
+  .platform-list .platform-list-label {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--muted-dim);
+    margin-right: 6px;
+    text-transform: uppercase;
+  }
+  .platform-list .platform-name {
     color: var(--body);
+    font-weight: 600;
+  }
+  .platform-list .platform-sep {
+    color: var(--muted-dim);
+    margin: 0 6px;
   }
 
   /* Pill-button group (team size, complexity) */
@@ -254,13 +262,21 @@
   /* ============================================================
      Step 2 — builder
      ============================================================ */
-  .builder-grid {
+  /* ============================================================
+     Scoping shell — left column (qualifier + builder), floating right panel
+     ============================================================ */
+  .scoping-grid {
     display: grid;
-    grid-template-columns: 1fr 380px;
-    gap: 32px;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 36px;
     align-items: start;
+    position: relative;
+    z-index: 2;
   }
-  @media (max-width: 1100px) { .builder-grid { grid-template-columns: 1fr; } }
+  .scoping-column { min-width: 0; }
+  @media (max-width: 980px) {
+    .scoping-grid { grid-template-columns: 1fr; }
+  }
 
   .components { display: flex; flex-direction: column; gap: 16px; }
 
@@ -475,11 +491,11 @@
   }
   .retainer-tiers {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 8px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
     margin-top: 22px;
   }
-  @media (max-width: 1100px) { .retainer-tiers { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1280px) { .retainer-tiers { grid-template-columns: repeat(3, 1fr); } }
   @media (max-width: 540px) { .retainer-tiers { grid-template-columns: 1fr; } }
   .retainer-tier {
     background: var(--input-bg);
@@ -544,7 +560,7 @@
     position: sticky;
     top: 24px;
   }
-  @media (max-width: 1100px) {
+  @media (max-width: 980px) {
     .price-panel { position: static; }
   }
   .price-panel .header {
@@ -808,118 +824,119 @@
     <div class="stub"></div>
   </header>
 
-  <!-- ZONE 1 — QUALIFIER -->
-  <section class="zone" id="zone-qualifier">
-    <div class="step-header">
-      <div class="step-badge">01</div>
-      <div class="step-title">
-        <h2>Where are you with Intercom?</h2>
-        <p class="sub">Tell us your situation so we can tailor the components and defaults below.</p>
-      </div>
-    </div>
+  <!-- Two-column scoping shell: left = both zones, right = price panel that floats -->
+  <div class="scoping-grid">
 
-    <div class="q-block">
-      <h3>1. Your Intercom setup</h3>
-      <div class="radio-row" id="setup-radios">
-        <label class="selectable is-selected" data-value="new">
-          <span class="radio-dot"></span>
-          <span class="label-block">
-            <span class="name">New to Intercom</span>
-            <span class="desc">Starting from a clean workspace</span>
-          </span>
-        </label>
-        <label class="selectable" data-value="existing">
-          <span class="radio-dot"></span>
-          <span class="label-block">
-            <span class="name">Already live on Intercom</span>
-            <span class="desc">Optimising an existing setup</span>
-          </span>
-        </label>
-      </div>
+    <div class="scoping-column">
 
-      <div class="checkbox-row" style="margin-top:16px;">
-        <label class="selectable" id="migration-check">
-          <span class="checkbox-tick"></span>
-          <span class="label-block">
-            <span class="name">Migration required <span class="tag" style="margin-left:8px;">VIA MIGR8NOW</span></span>
-            <span class="desc">Migrating from another platform.</span>
-            <div class="platform-list" id="platform-chips">
-              <span class="platform-chip">Zendesk</span>
-              <span class="platform-chip">Freshdesk</span>
-              <span class="platform-chip">Help Scout</span>
-              <span class="platform-chip">Zoho Desk</span>
-              <span class="platform-chip">LiveChat</span>
-              <span class="platform-chip">Salesforce Service Cloud</span>
-              <span class="platform-chip">Intercom</span>
-            </div>
-          </span>
-        </label>
-      </div>
-    </div>
-
-    <div class="q-block">
-      <h3>2. How large is your CX team?</h3>
-      <div class="pill-group" id="team-size">
-        <button class="pill-btn is-selected" data-value="1-5">1–5 agents</button>
-        <button class="pill-btn" data-value="6-15">6–15 agents</button>
-        <button class="pill-btn" data-value="16-50">16–50 agents</button>
-        <button class="pill-btn" data-value="50+">50+ agents</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- ZONE 2 — BUILDER -->
-  <section class="zone zone-builder" id="zone-builder">
-    <div class="step-header">
-      <div class="step-badge">02</div>
-      <div class="step-title">
-        <h2>Build your engagement</h2>
-        <p class="sub">All components are optional. Adjust counts and complexity to match your needs.</p>
-      </div>
-    </div>
-
-    <div class="builder-grid">
-
-      <!-- Components column -->
-      <div class="components" id="components-list">
-        <!-- Components rendered by JS -->
-      </div>
-
-      <!-- Sticky price panel -->
-      <aside class="price-panel" id="price-panel">
-        <div class="header">
-          <div class="label">YOUR ENGAGEMENT</div>
+      <!-- ZONE 1 — QUALIFIER -->
+      <section class="zone" id="zone-qualifier">
+        <div class="step-header">
+          <div class="step-badge">01</div>
+          <div class="step-title">
+            <h2>Where are you with Intercom?</h2>
+            <p class="sub">Tell us your situation so we can tailor the components and defaults below.</p>
+          </div>
         </div>
 
-        <div class="currency-pill" id="currency-pill">
-          <button data-currency="USD">USD</button>
-          <button data-currency="AUD" class="is-selected">AUD</button>
-          <button data-currency="EUR">EUR</button>
-          <button data-currency="GBP">GBP</button>
+        <div class="q-block">
+          <h3>1. Your Intercom setup</h3>
+          <div class="radio-row" id="setup-radios">
+            <label class="selectable is-selected" data-value="new">
+              <span class="radio-dot"></span>
+              <span class="label-block">
+                <span class="name">New to Intercom</span>
+                <span class="desc">Starting from a clean workspace</span>
+              </span>
+            </label>
+            <label class="selectable" data-value="existing">
+              <span class="radio-dot"></span>
+              <span class="label-block">
+                <span class="name">Already live on Intercom</span>
+                <span class="desc">Optimising an existing setup</span>
+              </span>
+            </label>
+          </div>
+
+          <div class="checkbox-row" style="margin-top:16px;">
+            <label class="selectable" id="migration-check">
+              <span class="checkbox-tick"></span>
+              <span class="label-block">
+                <span class="name">Migration required <span class="tag" style="margin-left:8px;">VIA MIGR8NOW</span></span>
+                <span class="desc">Migrating from another platform.</span>
+                <div class="platform-list">
+                  <span class="platform-list-label">Supported:</span>
+                  <span class="platform-name">Zendesk</span><span class="platform-sep">·</span><span class="platform-name">Freshdesk</span><span class="platform-sep">·</span><span class="platform-name">Help Scout</span><span class="platform-sep">·</span><span class="platform-name">Zoho Desk</span><span class="platform-sep">·</span><span class="platform-name">LiveChat</span><span class="platform-sep">·</span><span class="platform-name">Salesforce Service Cloud</span><span class="platform-sep">·</span><span class="platform-name">Intercom</span>
+                </div>
+              </span>
+            </label>
+          </div>
         </div>
 
-        <div class="total-block">
-          <div class="from-label">FROM</div>
-          <div class="total" id="grand-total">$0</div>
-          <div class="total-meta" id="total-meta">AUD, project total (indicative)</div>
+        <div class="q-block">
+          <h3>2. How large is your CX team?</h3>
+          <div class="pill-group" id="team-size">
+            <button class="pill-btn is-selected" data-value="1-5">1–5 agents</button>
+            <button class="pill-btn" data-value="6-15">6–15 agents</button>
+            <button class="pill-btn" data-value="16-50">16–50 agents</button>
+            <button class="pill-btn" data-value="50+">50+ agents</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ZONE 2 — BUILDER -->
+      <section class="zone zone-builder" id="zone-builder">
+        <div class="step-header">
+          <div class="step-badge">02</div>
+          <div class="step-title">
+            <h2>Build your engagement</h2>
+            <p class="sub">All components are optional. Adjust counts and complexity to match your needs.</p>
+          </div>
         </div>
 
-        <div class="breakdown" id="breakdown-list">
-          <!-- Breakdown rendered by JS -->
+        <!-- Components flow full width of the column -->
+        <div class="components" id="components-list">
+          <!-- Components rendered by JS -->
         </div>
+      </section>
 
-        <div class="disclaimer">
-          Prices shown are indicative estimates based on your selections.
-          Final scope confirmed during discovery.
-        </div>
+    </div><!-- /.scoping-column -->
 
-        <div class="panel-cta">
-          <button class="btn-primary" id="cta-book">Book a discovery call</button>
-          <button class="btn-secondary" id="cta-pdf">Download estimate (PDF)</button>
-        </div>
-      </aside>
-    </div>
-  </section>
+    <!-- Floating sticky price panel (sibling to .scoping-column) -->
+    <aside class="price-panel" id="price-panel">
+      <div class="header">
+        <div class="label">YOUR ENGAGEMENT</div>
+      </div>
+
+      <div class="currency-pill" id="currency-pill">
+        <button data-currency="USD">USD</button>
+        <button data-currency="AUD" class="is-selected">AUD</button>
+        <button data-currency="EUR">EUR</button>
+        <button data-currency="GBP">GBP</button>
+      </div>
+
+      <div class="total-block">
+        <div class="from-label">FROM</div>
+        <div class="total" id="grand-total">$0</div>
+        <div class="total-meta" id="total-meta">AUD, project total (indicative)</div>
+      </div>
+
+      <div class="breakdown" id="breakdown-list">
+        <!-- Breakdown rendered by JS -->
+      </div>
+
+      <div class="disclaimer">
+        Prices shown are indicative estimates based on your selections.
+        Final scope confirmed during discovery.
+      </div>
+
+      <div class="panel-cta">
+        <button class="btn-primary" id="cta-book">Book a discovery call</button>
+        <button class="btn-secondary" id="cta-pdf">Download estimate (PDF)</button>
+      </div>
+    </aside>
+
+  </div><!-- /.scoping-grid -->
 
   <footer class="page-footer">
     <span class="red">PERFECT MADE POSSIBLE</span> &nbsp;·&nbsp; sabelcustomersuccess.com
@@ -965,9 +982,9 @@ const CONFIG = {
   // FX rates (multiplier from USD)
   fx: {
     USD: 1.0,
-    AUD: 1.5,
-    EUR: 0.8,
-    GBP: 0.66,
+    AUD: 1.3944,
+    EUR: 0.85,
+    GBP: 0.70,
   },
   currencySymbol: { USD: "$", AUD: "$", EUR: "€", GBP: "£" },
 
@@ -1232,7 +1249,13 @@ function calcMigrationUSD() {
     }
     const base = tiers[i].totalUSD;
     const surplus = qty - tiers[i].qty;
-    subtotal = base + (surplus * tiers[i].perTicket);
+    // Per Excel formula: nextRate = INDEX(rates, MIN(i+1, ROWS(rates)))
+    // Use the NEXT tier's per-ticket rate for surplus calculation,
+    // or the current tier's rate if we're already at the top tier.
+    const nextRate = i + 1 < tiers.length
+      ? tiers[i + 1].perTicket
+      : tiers[i].perTicket;
+    subtotal = base + (surplus * nextRate);
   }
 
   // Surcharge lookup
