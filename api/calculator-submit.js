@@ -297,10 +297,6 @@ module.exports = async function handler(req, res) {
     const notifyEmail = process.env.NOTIFY_EMAIL || 'richard@sabelcustomersuccess.com';
     const fromEmail = process.env.FROM_EMAIL || 'Sabel Pricing <pricing@sabelcustomersuccess.com>';
 
-    console.log('[debug] apiKey prefix:', apiKey.slice(0, 8), 'apiKey length:', apiKey.length);
-    console.log('[debug] fromEmail:', JSON.stringify(fromEmail));
-    console.log('[debug] notifyEmail:', JSON.stringify(notifyEmail));
-
     body.contact = { name, company };
     body.meta = body.meta || {};
     body.meta.submittedAt = new Date().toISOString();
@@ -327,7 +323,7 @@ module.exports = async function handler(req, res) {
     if (!resendRes.ok) {
       const errorText = await resendRes.text();
       console.error('Resend error:', resendRes.status, errorText);
-      return res.status(502).json({ error: 'Could not send notification email.', resend_status: resendRes.status, resend_body: errorText, debug_key_prefix: apiKey.slice(0, 8), debug_from: fromEmail });
+      return res.status(502).json({ error: 'Could not send notification email.' });
     }
 
     return res.status(200).json({ ok: true });
